@@ -13,8 +13,8 @@ class EventSerializer(serializers.ModelSerializer):
     class Meta:
         model = Event
         fields = [
-            'id', 'title', 'description', 'category', 'location', 'date_time',
-            'max_attendees', 'host', 'attendees', 'attendee_count', 'is_full',
+            'id', 'title', 'description', 'category', 'location', 'latitude', 'longitude', 'location_name',
+            'date_time', 'max_attendees', 'host', 'attendees', 'attendee_count', 'is_full',
             'is_past', 'created_at', 'updated_at', 'is_cancelled'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -33,8 +33,8 @@ class EventListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Event
         fields = [
-            'id', 'title', 'description', 'category', 'location', 'date_time',
-            'max_attendees', 'host', 'attendee_count', 'is_full', 'is_past',
+            'id', 'title', 'description', 'category', 'location', 'latitude', 'longitude', 'location_name',
+            'date_time', 'max_attendees', 'host', 'attendee_count', 'is_full', 'is_past',
             'created_at', 'is_cancelled'
         ]
 

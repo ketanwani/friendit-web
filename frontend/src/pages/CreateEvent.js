@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import LocationPicker from '../components/LocationPicker';
 
 const CreateEvent = () => {
   const [formData, setFormData] = useState({
@@ -11,6 +12,7 @@ const CreateEvent = () => {
     date_time: '',
     max_attendees: ''
   });
+  const [selectedLocation, setSelectedLocation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
@@ -36,6 +38,14 @@ const CreateEvent = () => {
     });
   };
 
+  const handleLocationSelect = (location) => {
+    setSelectedLocation(location);
+    setFormData({
+      ...formData,
+      location: location.address
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -44,7 +54,13 @@ const CreateEvent = () => {
     try {
       const eventData = {
         ...formData,
-        max_attendees: formData.max_attendees ? parseInt(formData.max_attendees) : null
+        max_attendees: formData.max_attendees ? parseInt(formData.max_attendees) : null,
+        // Include location data if selected
+        ...(selectedLocation && {
+          latitude: selectedLocation.lat,
+          longitude: selectedLocation.lng,
+          location_name: selectedLocation.name
+        })
       };
       
       const response = await api.post('/events/', eventData);
@@ -141,18 +157,9 @@ const CreateEvent = () => {
             </div>
 
             <div>
-              <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-1">
-                Location *
-              </label>
-              <input
-                type="text"
-                id="location"
-                name="location"
-                required
-                value={formData.location}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                placeholder="Event location"
+              <LocationPicker 
+                onLocationSelect={handleLocationSelect}
+                initialLocation={selectedLocation}
               />
             </div>
 
