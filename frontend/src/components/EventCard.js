@@ -1,9 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 
 const EventCard = ({ event }) => {
-  const { isAuthenticated } = useAuth();
 
   const formatDate = (dateTime) => {
     const date = new Date(dateTime);

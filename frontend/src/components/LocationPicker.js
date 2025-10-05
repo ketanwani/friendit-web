@@ -1,117 +1,150 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Wrapper, Status } from '@googlemaps/react-wrapper';
 
 const LocationPicker = ({ onLocationSelect, initialLocation = null }) => {
   const [selectedLocation, setSelectedLocation] = useState(initialLocation);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
-  const mapRef = useRef(null);
-  const markerRef = useRef(null);
-  const mapInstanceRef = useRef(null);
+  const searchRef = useRef(null);
+  const suggestionsRef = useRef(null);
 
   const handleLocationSelect = useCallback((location) => {
     setSelectedLocation(location);
     onLocationSelect(location);
     setIsOpen(false);
+    setSearchQuery(location.address || location.name);
+    setSuggestions([]);
   }, [onLocationSelect]);
 
-  const MapComponent = () => {
-    const onMapLoad = useCallback((map) => {
-      mapInstanceRef.current = map;
-      
-      // Add click listener to map
-      map.addListener('click', (event) => {
-        const lat = event.latLng.lat();
-        const lng = event.latLng.lng();
-        
-        // Remove existing marker
-        if (markerRef.current) {
-          markerRef.current.setMap(null);
-        }
-        
-        // Add new marker
-        markerRef.current = new window.google.maps.Marker({
-          position: { lat, lng },
-          map: map,
-          draggable: true
-        });
-        
-        // Get address from coordinates
-        const geocoder = new window.google.maps.Geocoder();
-        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            const address = results[0].formatted_address;
-            handleLocationSelect({
-              lat,
-              lng,
-              address,
-              name: results[0].name || address
-            });
-          } else {
-            handleLocationSelect({
-              lat,
-              lng,
-              address: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
-              name: 'Selected Location'
-            });
-          }
-        });
+  // Search for locations using backend API
+  const searchLocations = useCallback(async (query) => {
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    // Fallback if environment variable is not loaded
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
+    try {
+      const url = `${apiUrl}/events/search-locations/?query=${encodeURIComponent(query)}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        mode: 'cors',
       });
       
-      // Set initial location if provided
-      if (selectedLocation) {
-        map.setCenter({ lat: selectedLocation.lat, lng: selectedLocation.lng });
-        markerRef.current = new window.google.maps.Marker({
-          position: { lat: selectedLocation.lat, lng: selectedLocation.lng },
-          map: map,
-          draggable: true
-        });
+      if (response.ok) {
+        const data = await response.json();
+        setSuggestions(data.results || []);
+      } else {
+        console.error('API request failed:', response.status, response.statusText);
+        setSuggestions([]);
       }
-    }, [selectedLocation, handleLocationSelect]);
-
-    return (
-      <div
-        ref={mapRef}
-        style={{ height: '400px', width: '100%' }}
-        id="map"
-      />
-    );
-  };
-
-  const render = (status) => {
-    switch (status) {
-      case Status.LOADING:
-        return (
-          <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-            <span className="ml-2 text-gray-600">Loading map...</span>
-          </div>
-        );
-      case Status.FAILURE:
-        return (
-          <div className="flex items-center justify-center h-64 bg-red-100 rounded-lg">
-            <div className="text-red-600">
-              <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-              <p className="text-center">Failed to load map</p>
-              <p className="text-sm text-center text-gray-600">Please check your internet connection</p>
-            </div>
-          </div>
-        );
-      default:
-        return <MapComponent />;
+    } catch (error) {
+      console.error('Error searching locations:', error);
+      setSuggestions([]);
     }
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchQuery) {
+        searchLocations(searchQuery);
+      } else {
+        setSuggestions([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, searchLocations]);
+
+  // Handle input change
+  const handleInputChange = (e) => {
+    setSearchQuery(e.target.value);
+    setIsOpen(true);
   };
+
+  // Handle suggestion click
+  const handleSuggestionClick = (suggestion) => {
+    handleLocationSelect(suggestion);
+  };
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target) && 
+          searchRef.current && !searchRef.current.contains(event.target)) {
+        // Only close if there are no suggestions or if user clicks outside
+        if (suggestions.length === 0) {
+          setIsOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [suggestions.length]);
 
   return (
     <div className="space-y-4">
-      {/* Location Display */}
+      {/* Location Search */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          Event Location
+          Event Location *
         </label>
         
-        {selectedLocation ? (
+        <div className="relative">
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchQuery}
+            onChange={handleInputChange}
+            placeholder="Search for a location..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          />
+          
+          {/* Search Icon */}
+          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+            <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          {/* Suggestions Dropdown */}
+          {isOpen && suggestions.length > 0 && (
+            <div 
+              ref={suggestionsRef}
+              className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+            >
+              {suggestions.map((suggestion, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                >
+                  <div className="flex items-start space-x-3">
+                    <svg className="w-5 h-5 text-gray-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{suggestion.name}</p>
+                      <p className="text-sm text-gray-600">{suggestion.address}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Selected Location Display */}
+        {selectedLocation && (
           <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
             <div className="flex items-start space-x-3">
               <svg className="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -121,90 +154,21 @@ const LocationPicker = ({ onLocationSelect, initialLocation = null }) => {
               <div className="flex-1">
                 <p className="font-medium text-green-900">{selectedLocation.name}</p>
                 <p className="text-sm text-green-700">{selectedLocation.address}</p>
-                <p className="text-xs text-green-600 mt-1">
-                  Coordinates: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
-                </p>
               </div>
               <button
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => {
+                  setSelectedLocation(null);
+                  setSearchQuery('');
+                  onLocationSelect(null);
+                }}
                 className="text-green-600 hover:text-green-800 text-sm font-medium"
               >
-                {isOpen ? 'Hide Map' : 'Change Location'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-            <div className="flex items-center space-x-3">
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <div className="flex-1">
-                <p className="text-gray-600">No location selected</p>
-                <p className="text-sm text-gray-500">Click "Select Location" to choose from map</p>
-              </div>
-              <button
-                onClick={() => setIsOpen(true)}
-                className="bg-primary-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-primary-700"
-              >
-                Select Location
+                Clear
               </button>
             </div>
           </div>
         )}
       </div>
-
-      {/* Map Modal */}
-      {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Select Event Location</h3>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <p className="text-sm text-gray-600 mt-1">
-                Click anywhere on the map to select the event location
-              </p>
-            </div>
-            
-            <div className="p-4">
-              <Wrapper
-                apiKey={process.env.REACT_APP_GOOGLE_MAPS_API_KEY}
-                render={render}
-                libraries={['places']}
-              />
-            </div>
-            
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                {selectedLocation && (
-                  <button
-                    onClick={() => setIsOpen(false)}
-                    className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700"
-                  >
-                    Use Selected Location
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

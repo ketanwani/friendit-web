@@ -8,4 +8,5 @@ urlpatterns = [
     path('<int:event_id>/leave/', views.leave_event, name='leave-event'),
     path('<int:event_id>/comments/', views.CommentListCreateView.as_view(), name='comment-list-create'),
     path('<int:event_id>/comments/<int:pk>/', views.CommentDetailView.as_view(), name='comment-detail'),
+    path('search-locations/', views.search_locations, name='search-locations'),
 ]

@@ -6,6 +6,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db.models import Q
 from django.utils import timezone
+from django.conf import settings
+import googlemaps
 from .models import Event, Comment
 from .serializers import EventSerializer, EventListSerializer, CommentSerializer, EventJoinSerializer
 
@@ -129,3 +131,50 @@ class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
         if instance.user != self.request.user and instance.event.host != self.request.user:
             raise PermissionError("Not authorized to delete this comment")
         instance.delete()
+
+
+@api_view(['GET'])
+@permission_classes([])  # Allow public access
+def search_locations(request):
+    """
+    Search for locations using Google Places API
+    """
+    query = request.GET.get('query', '').strip()
+    
+    if not query or len(query) < 2:
+        return Response({'results': []})
+    
+    # Check if API key is loaded
+    api_key = settings.GOOGLE_MAPS_API_KEY
+    if not api_key:
+        print("ERROR: GOOGLE_MAPS_API_KEY is not set!")
+        return Response({'error': 'API key not configured'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    try:
+        print(f"Searching for: {query}")
+        print(f"API Key: {api_key[:10]}...")
+        
+        # Initialize Google Maps client
+        gmaps = googlemaps.Client(key=api_key)
+        
+        # Search for places
+        places_result = gmaps.places(query)
+        print(f"Places result: {places_result}")
+        
+        results = []
+        for place in places_result.get('results', [])[:5]:  # Limit to 5 results
+            result = {
+                'name': place.get('name', ''),
+                'address': place.get('formatted_address', ''),
+                'lat': place['geometry']['location']['lat'],
+                'lng': place['geometry']['location']['lng'],
+                'place_id': place.get('place_id', '')
+            }
+            results.append(result)
+        
+        print(f"Returning {len(results)} results")
+        return Response({'results': results})
+        
+    except Exception as e:
+        print(f"Error searching locations: {e}")
+        return Response({'results': []}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
